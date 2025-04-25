@@ -1,0 +1,45 @@
+@import url("https://fonts.googleapis.com/css2?family=Stint+Ultra+Expanded&display=swap");
+
+.login {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  gap: 150px;
+}
+
+.logo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  font-family: "Stint Ultra Expanded", serif;
+  font-size: 64px;
+  color: #b51e51;
+}
+
+.logo-image {
+  width: 90px;
+  height: 90px;
+}
+
+.login-input {
+  width: 100%;
+  max-width: 1000px;
+}
+
+@media (min-width: 768px) {
+  .login-input {
+    width: 100%;
+    max-width: 1000px;
+  }
+}
+
+@media (max-width: 767px) {
+  .login-input {
+    width: 80%;
+    max-width: 1000px;
+  }
+}

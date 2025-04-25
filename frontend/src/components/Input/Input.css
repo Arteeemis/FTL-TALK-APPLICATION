@@ -1,0 +1,20 @@
+.chat-input {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  bottom: 1em;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #181d33;
+  position: fixed;
+  width: 70%;
+  max-width: 800px;
+  border-radius: 15px;
+  padding-left: 10px;
+}
+
+.chat--input {
+  border: none;
+  background-color: #181d33;
+  border-radius: 0.5em;
+}
