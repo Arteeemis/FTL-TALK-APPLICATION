@@ -23,6 +23,7 @@ export const Chat: React.FC<ChatProps> = ({
   // при логауте закрываем соединение
   const handleClickLogoutBtn = () => {
     resetUser();
+    setMessageArray([]);
     if (ws) {
       ws.close(4000, login);
     } else {

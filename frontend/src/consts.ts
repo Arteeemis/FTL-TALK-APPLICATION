@@ -1,4 +1,4 @@
-export const hostname = "localhost";
+export const hostname = "172.20.10.4";
 
 export type Message = {
   id?: number;

@@ -3,10 +3,10 @@ import axios from "axios";
 import http from "http";
 import ws, { type WebSocket } from "ws";
 
-const port: number = 8005; // порт на котором будет развернут этот (вебсокет) сервер
-const hostname = "localhost"; // адрес вебсокет сервера
-const transportLevelPort = 8080; // порт сервера транспортного уровня
-const transportLevelHostname = "172.20.10.2"; // адрес сервера транспортного уровня
+const port: number = 8005;
+const hostname = "172.20.10.4";
+const transportLevelPort = 8080;
+const transportLevelHostname = "172.20.10.2";
 
 interface Message {
   id?: number;
@@ -24,56 +24,78 @@ type Users = Record<
   }>
 >;
 
-const app = express(); // создание экземпляра приложения express
-const server = http.createServer(app); // создание HTTP-сервера
+const app = express();
+const server = http.createServer(app);
+const messageHistory: Message[] = [];
 
-// Используйте express.json() для парсинга JSON тела запроса
 app.use(express.json());
 
 app.post(
   "/receive",
   (req: { body: Message }, res: { sendStatus: (arg0: number) => void }) => {
     const message: Message = req.body;
+    console.log(
+      `[TRANSPORT] Received from transport: ${message.username}: ${message.data}`
+    );
     sendMessageToOtherUsers(message.username, message);
     res.sendStatus(200);
   }
 );
 
-// запуск сервера приложения
 server.listen(port, hostname, () => {
-  console.log(`Server started at http://${hostname}:${port}`);
+  console.log(`Server running at http://${hostname}:${port}`);
 });
 
 const wss = new ws.WebSocketServer({ server });
 const users: Users = {};
 
 const sendMsgToTransportLevel = async (message: Message): Promise<void> => {
-  const response = await axios.post(
-    `http://${transportLevelHostname}:${transportLevelPort}/send`,
-    message
-  );
-  if (response.status !== 200) {
-    message.error = "Error from transport level by sending message";
-    users[message.username].forEach((element) => {
+  try {
+    const response = await axios.post(
+      `http://${transportLevelHostname}:${transportLevelPort}/send`,
+      message
+    );
+    console.log(
+      `[TRANSPORT] Sent to transport level: ${message.username}: ${message.data}`
+    );
+    console.log(`[TRANSPORT] Response status: ${response.status}`);
+
+    if (response.status !== 200) {
+      message.error = "Transport level error";
+      users[message.username]?.forEach((element) => {
+        if (message.id === element.id) {
+          element.ws.send(JSON.stringify(message));
+        }
+      });
+    }
+  } catch (error) {
+    console.error(
+      `[TRANSPORT] Error sending to transport level:`,
+      error.message
+    );
+    message.error = "Transport level connection failed";
+    users[message.username]?.forEach((element) => {
       if (message.id === element.id) {
         element.ws.send(JSON.stringify(message));
       }
     });
   }
-  console.log("Response from transport level: ", response);
 };
 
 function sendMessageToOtherUsers(username: string, message: Message): void {
   const msgString = JSON.stringify(message);
+  console.log(
+    `[BROADCAST] Sending from ${username} to others: ${message.data}`
+  );
+
   for (const key in users) {
-    console.log(
-      `[array] key: ${key}, users[keys]: ${JSON.stringify(
-        users[key]
-      )} username: ${username}`
-    );
     if (key !== username) {
       users[key].forEach((element) => {
-        element.ws.send(msgString);
+        try {
+          element.ws.send(msgString);
+        } catch (error) {
+          console.error(`[BROADCAST] Error sending to ${key}:`, error.message);
+        }
       });
     }
   }
@@ -81,43 +103,67 @@ function sendMessageToOtherUsers(username: string, message: Message): void {
 
 wss.on("connection", (websocketConnection: WebSocket, req: Request) => {
   if (req.url.length === 0) {
-    console.log(`Error: req.url = ${req.url}`);
+    console.log(`[ERROR] Empty connection URL`);
     return;
   }
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+
   // @ts-expect-error
   const url = new URL(req?.url, `http://${req.headers.host}`);
   const username = url.searchParams.get("username");
 
   if (username !== null) {
-    console.log(`[open] Connected, username: ${username}`);
+    console.log(`[CONNECT] New connection from: ${username}`);
 
     if (username in users) {
-      users[username] = [
-        ...users[username],
-        { id: users[username].length, ws: websocketConnection },
-      ];
+      users[username].push({
+        id: users[username].length,
+        ws: websocketConnection,
+      });
     } else {
       users[username] = [{ id: 1, ws: websocketConnection }];
     }
-  } else {
-    console.log("[open] Connected");
+
+    // Отправляем историю сообщений новому пользователю, если она не пустая
+    if (messageHistory.length > 0) {
+      // Отправляем каждое сообщение отдельно
+      messageHistory.forEach((message) => {
+        try {
+          websocketConnection.send(JSON.stringify(message));
+        } catch (error) {
+          console.error(
+            `[HISTORY] Error sending history to ${username}:`,
+            error.message
+          );
+        }
+      });
+    }
   }
 
-  console.log("users collection", users);
-
   websocketConnection.on("message", (messageString: string) => {
-    console.log("[message] Received from " + username + ": " + messageString);
-
     const message: Message = JSON.parse(messageString);
     message.username = message.username ?? username;
-    // sendMessageToOtherUsers(message.username, message);
+    console.log(`[MESSAGE] Received from ${message.username}: ${message.data}`);
+    if (
+      !message.send_time ||
+      !messageHistory.some(
+        (m) => m.send_time === message.send_time && m.data === message.data
+      )
+    ) {
+      messageHistory.push(message);
+    }
+    sendMessageToOtherUsers(message.username, message);
     void sendMsgToTransportLevel(message);
   });
 
-  websocketConnection.on("close", (event: any) => {
-    console.log(username, "[close] Соединение прервано", event);
-
-    delete users.username;
+  websocketConnection.on("close", () => {
+    console.log(`[DISCONNECT] User disconnected: ${username}`);
+    if (username && users[username]) {
+      users[username] = users[username].filter(
+        (user) => user.ws !== websocketConnection
+      );
+      if (users[username].length === 0) {
+        delete users[username];
+      }
+    }
   });
 });

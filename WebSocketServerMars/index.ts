@@ -4,7 +4,7 @@ import http from "http";
 import ws, { type WebSocket } from "ws";
 
 const port: number = 8010; // порт на котором будет развернут этот (вебсокет) сервер
-const hostname = "localhost"; // адрес вебсокет сервера
+const hostname = "172.20.10.4"; // адрес вебсокет сервера
 const transportLevelPort = 8080; // порт сервера транспортного уровня
 const transportLevelHostname = "172.20.10.2"; // адрес сервера транспортного уровня
 
@@ -26,6 +26,7 @@ type Users = Record<
 
 const app = express(); // создание экземпляра приложения express
 const server = http.createServer(app); // создание HTTP-сервера
+const messageHistory: Message[] = [];
 
 // Используйте express.json() для парсинга JSON тела запроса
 app.use(express.json());
@@ -34,10 +35,34 @@ app.post(
   "/receive",
   (req: { body: Message }, res: { sendStatus: (arg0: number) => void }) => {
     const message: Message = req.body;
-    sendMessageToOtherUsers(message.username, message);
+    messageHistory.push(message);
+    console.log(
+      `[READ-ONLY][TRANSPORT LEVEL] Received message from transport level:`,
+      JSON.stringify(message)
+    );
+    broadcastMessageToAllUsers(message);
     res.sendStatus(200);
   }
 );
+
+function broadcastMessageToAllUsers(message: Message): void {
+  const msgString = JSON.stringify(message);
+  console.log(
+    `[READ-ONLY][BROADCAST] Broadcasting message to all users: ${msgString}`
+  );
+
+  for (const key in users) {
+    console.log(`[READ-ONLY][BROADCAST] Sending to user: ${key}`);
+    users[key].forEach((element) => {
+      try {
+        element.ws.send(msgString);
+        console.log(`[READ-ONLY][BROADCAST] Successfully sent to ${key}`);
+      } catch (error) {
+        console.error(`[READ-ONLY][BROADCAST] Error sending to ${key}:`, error);
+      }
+    });
+  }
+}
 
 // запуск сервера приложения
 server.listen(port, hostname, () => {
@@ -100,6 +125,20 @@ wss.on("connection", (websocketConnection: WebSocket, req: Request) => {
     } else {
       users[username] = [{ id: 1, ws: websocketConnection }];
     }
+    // Отправляем историю сообщений новому пользователю, если она не пустая
+    if (messageHistory.length > 0) {
+      // Отправляем каждое сообщение отдельно
+      messageHistory.forEach((message) => {
+        try {
+          websocketConnection.send(JSON.stringify(message));
+        } catch (error) {
+          console.error(
+            `[HISTORY] Error sending history to ${username}:`,
+            error.message
+          );
+        }
+      });
+    }
   } else {
     console.log("[open] Connected");
   }
@@ -111,8 +150,8 @@ wss.on("connection", (websocketConnection: WebSocket, req: Request) => {
 
     const message: Message = JSON.parse(messageString);
     message.username = message.username ?? username;
-    // sendMessageToOtherUsers(message.username, message);
-    // void sendMsgToTransportLevel(message);
+    sendMessageToOtherUsers(message.username, message);
+    void sendMsgToTransportLevel(message);
   });
 
   websocketConnection.on("close", (event: any) => {
