@@ -4,9 +4,9 @@ import http from "http";
 import ws, { type WebSocket } from "ws";
 
 const port: number = 8010; // порт на котором будет развернут этот (вебсокет) сервер
-const hostname = "172.20.10.4"; // адрес вебсокет сервера
+const hostname = "172.20.10.3"; // адрес вебсокет сервера
 const transportLevelPort = 8080; // порт сервера транспортного уровня
-const transportLevelHostname = "172.20.10.2"; // адрес сервера транспортного уровня
+const transportLevelHostname = "172.20.10.3"; // адрес сервера транспортного уровня
 
 interface Message {
   id?: number;
@@ -40,6 +40,10 @@ app.post(
       `[READ-ONLY][TRANSPORT LEVEL] Received message from transport level:`,
       JSON.stringify(message)
     );
+    if (message.error === "lost") {
+      message.username = "Система";
+      message.data = "❌ Ошибка - сегмент потерян ❌ ";
+    }
     broadcastMessageToAllUsers(message);
     res.sendStatus(200);
   }
